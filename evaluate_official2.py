@@ -121,16 +121,18 @@ def get_raw_scores(dataset, preds):
     for article in dataset:
         for p in article["paragraphs"]:
             for qa in p["qas"]:
+
                 qid = qa["id"]
+                if qid not in preds:
+                    print(f"Missing prediction for {qid}")
+                    continue
+
                 gold_answers = [
                     a["text"] for a in qa["answers"] if normalize_answer(a["text"])
                 ]
                 if not gold_answers:
                     # For unanswerable questions, only correct answer is empty string
                     gold_answers = [""]
-                if qid not in preds:
-                    print(f"Missing prediction for {qid}")
-                    continue
                 a_pred = preds[qid]
                 # Take max over all gold answers
                 exact_scores[qid] = max(compute_exact(a, a_pred) for a in gold_answers)
@@ -267,7 +269,7 @@ def find_best_thresh(preds, scores, na_probs, qid_to_has_ans):
     best_score = cur_score
     best_thresh = 0.0
     qid_list = sorted(na_probs, key=lambda k: na_probs[k])
-    for i, qid in enumerate(qid_list):
+    for qid in qid_list:
         if qid not in scores:
             continue
         if qid_to_has_ans[qid]:

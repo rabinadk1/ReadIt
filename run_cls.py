@@ -255,61 +255,50 @@ def train(args, train_dataset, model, tokenizer):
 
             tr_loss += loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
-                if args.fp16:
-                    torch.nn.utils.clip_grad_norm_(
-                        amp.master_params(optimizer), args.max_grad_norm
-                    )
-                else:
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), args.max_grad_norm
-                    )
+                torch.nn.utils.clip_grad_norm_(
+                    amp.master_params(optimizer) if args.fp16 else model.parameters(),
+                    args.max_grad_norm,
+                )
 
                 optimizer.step()
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
 
-                if (
-                    args.local_rank in [-1, 0]
-                    and args.logging_steps > 0
-                    and global_step % args.logging_steps == 0
-                ):
-                    logs = {}
-                    if args.local_rank == -1 and args.evaluate_during_training:
-                        # Only evaluate when single GPU
-                        # otherwise metrics may not average well
-                        results = evaluate(args, model, tokenizer)
-                        for key, value in results.items():
-                            eval_key = f"eval_{key}"
-                            logs[eval_key] = value
+                if args.local_rank in [-1, 0]:
+                    if args.logging_steps > 0 and global_step % args.logging_steps == 0:
+                        logs = {}
+                        if args.local_rank == -1 and args.evaluate_during_training:
+                            # Only evaluate when single GPU
+                            # otherwise metrics may not average well
+                            results = evaluate(args, model, tokenizer)
+                            for key, value in results.items():
+                                eval_key = f"eval_{key}"
+                                logs[eval_key] = value
 
-                    loss_scalar = (tr_loss - logging_loss) / args.logging_steps
-                    learning_rate_scalar = scheduler.get_lr()[0]
-                    logs["learning_rate"] = learning_rate_scalar
-                    logs["loss"] = loss_scalar
-                    logging_loss = tr_loss
+                        loss_scalar = (tr_loss - logging_loss) / args.logging_steps
+                        learning_rate_scalar = scheduler.get_lr()[0]
+                        logs["learning_rate"] = learning_rate_scalar
+                        logs["loss"] = loss_scalar
+                        logging_loss = tr_loss
 
-                    for key, value in logs.items():
-                        tb_writer.add_scalar(key, value, global_step)
-                    print(json.dumps({**logs, "step": global_step}))
+                        for key, value in logs.items():
+                            tb_writer.add_scalar(key, value, global_step)
+                        print(json.dumps({**logs, "step": global_step}))
 
-                if (
-                    args.local_rank in [-1, 0]
-                    and args.save_steps > 0
-                    and global_step % args.save_steps == 0
-                ):
-                    # Save model checkpoint
-                    output_dir = os.path.join(
-                        args.output_dir, f"checkpoint-{global_step}"
-                    )
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir)
-                    model_to_save = (
-                        model.module if hasattr(model, "module") else model
-                    )  # Take care of distributed/parallel training
-                    model_to_save.save_pretrained(output_dir)
-                    torch.save(args, os.path.join(output_dir, "training_args.bin"))
-                    logger.info(f"Saving model checkpoint to {output_dir}")
+                    if args.save_steps > 0 and global_step % args.save_steps == 0:
+                        # Save model checkpoint
+                        output_dir = os.path.join(
+                            args.output_dir, f"checkpoint-{global_step}"
+                        )
+                        if not os.path.exists(output_dir):
+                            os.makedirs(output_dir)
+                        model_to_save = (
+                            model.module if hasattr(model, "module") else model
+                        )  # Take care of distributed/parallel training
+                        model_to_save.save_pretrained(output_dir)
+                        torch.save(args, os.path.join(output_dir, "training_args.bin"))
+                        logger.info(f"Saving model checkpoint to {output_dir}")
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
@@ -418,8 +407,7 @@ def evaluate(args, model, tokenizer, prefix=""):
         results.update(result)
 
         final_map = {}
-        for idx, key in enumerate(key_map):
-            key_list = key_map[key]
+        for key, key_list in key_map.items():
             key_list[0] = key_list[0] / cnt_map[key]
             key_list[1] = key_list[1] / cnt_map[key]
             final_map[key] = key_list[1] - key_list[0]
@@ -461,14 +449,17 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, predict=False
     if task in ["mnli", "mnli-mm"] and args.model_type in ["roberta", "xlmroberta"]:
         # HACK(label indices are swapped in RoBERTa pretrained model)
         label_list[1], label_list[2] = label_list[2], label_list[1]
-    if predict:
-        examples = processor.get_test_examples(args.predict_file)
-    else:
-        examples = (
+
+    examples = (
+        processor.get_test_examples(args.predict_file)
+        if predict
+        else (
             processor.get_dev_examples(args.data_dir)
             if evaluate
             else processor.get_train_examples(args.data_dir)
         )
+    )
+
     features, id_map = convert_examples_to_features(
         examples,
         tokenizer,
@@ -497,6 +488,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, predict=False
     all_token_type_ids = torch.tensor(
         [f.token_type_ids for f in features], dtype=torch.long
     )
+
     if output_mode == "classification":
         all_labels = torch.tensor([f.label for f in features], dtype=torch.long)
     elif output_mode == "regression":
@@ -844,29 +836,32 @@ def main():
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
         logger.info(f" global_step = {global_step}, average loss = {tr_loss}")
 
-    # Saving best-practices:
-    # if you use defaults names for the model, you can reload it using from_pretrained()
-    if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        # Create output directory if needed
-        if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
-            os.makedirs(args.output_dir)
+        # Saving best-practices:
+        # if you use defaults names for the model,
+        # you can reload it using from_pretrained()
+        if args.local_rank == -1 or torch.distributed.get_rank() == 0:
+            # Create output directory if needed
+            if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
+                os.makedirs(args.output_dir)
 
-        logger.info(f"Saving model checkpoint to {args.output_dir}")
-        # Save a trained model, configuration and tokenizer using `save_pretrained()`.
-        # They can then be reloaded using `from_pretrained()`
-        model_to_save = (
-            model.module if hasattr(model, "module") else model
-        )  # Take care of distributed/parallel training
-        model_to_save.save_pretrained(args.output_dir)
-        tokenizer.save_pretrained(args.output_dir)
+            logger.info(f"Saving model checkpoint to {args.output_dir}")
+            # Save a trained model, configuration and tokenizer
+            # using `save_pretrained()`.
+            # They can then be reloaded using `from_pretrained()`
+            model_to_save = (
+                model.module if hasattr(model, "module") else model
+            )  # Take care of distributed/parallel training
+            model_to_save.save_pretrained(args.output_dir)
+            tokenizer.save_pretrained(args.output_dir)
 
-        # Good practice: save your training arguments together with the trained model
-        torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
+            # Good practice: save your training arguments
+            # together with the trained model
+            torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
 
-        # Load a trained model and vocabulary that you have fine-tuned
-        model = model_class.from_pretrained(args.output_dir)
-        tokenizer = tokenizer_class.from_pretrained(args.output_dir)
-        model.to(args.device)
+            # Load a trained model and vocabulary that you have fine-tuned
+            model = model_class.from_pretrained(args.output_dir)
+            tokenizer = tokenizer_class.from_pretrained(args.output_dir)
+            model.to(args.device)
 
     # Evaluation
     results = {}
@@ -951,8 +946,7 @@ def main():
                     num_id += 1
 
         final_map = {}
-        for idx, key in enumerate(key_map):
-            key_list = key_map[key]
+        for key, key_list in key_map.items():
             key_list[0] = key_list[0] / cnt_map[key]
             key_list[1] = key_list[1] / cnt_map[key]
             # key_list[0] = key_list[0]

@@ -256,57 +256,46 @@ def train(args, train_dataset, model, tokenizer):
 
             tr_loss += loss.item()
             if (step + 1) % args.gradient_accumulation_steps == 0:
-                if args.fp16:
-                    torch.nn.utils.clip_grad_norm_(
-                        amp.master_params(optimizer), args.max_grad_norm
-                    )
-                else:
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(), args.max_grad_norm
-                    )
+                torch.nn.utils.clip_grad_norm_(
+                    amp.master_params(optimizer) if args.fp16 else model.parameters(),
+                    args.max_grad_norm,
+                )
 
                 optimizer.step()
                 scheduler.step()  # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
 
-                # Log metrics
-                if (
-                    args.local_rank in [-1, 0]
-                    and args.logging_steps > 0
-                    and global_step % args.logging_steps == 0
-                ):
-                    if args.local_rank == -1 and args.evaluate_during_training:
-                        # Only evaluate when single GPU
-                        # otherwise metrics may not average well
-                        results = evaluate(args, model, tokenizer)
-                        for key, value in results.items():
-                            tb_writer.add_scalar(f"eval_{key}", value, global_step)
-                    tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
-                    tb_writer.add_scalar(
-                        "loss",
-                        (tr_loss - logging_loss) / args.logging_steps,
-                        global_step,
-                    )
-                    logging_loss = tr_loss
+                if args.local_rank in [-1, 0]:
+                    # Log metrics
+                    if args.logging_steps > 0 and global_step % args.logging_steps == 0:
+                        if args.local_rank == -1 and args.evaluate_during_training:
+                            # Only evaluate when single GPU
+                            # otherwise metrics may not average well
+                            results = evaluate(args, model, tokenizer)
+                            for key, value in results.items():
+                                tb_writer.add_scalar(f"eval_{key}", value, global_step)
+                        tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
+                        tb_writer.add_scalar(
+                            "loss",
+                            (tr_loss - logging_loss) / args.logging_steps,
+                            global_step,
+                        )
+                        logging_loss = tr_loss
 
-                # Save model checkpoint
-                if (
-                    args.local_rank in [-1, 0]
-                    and args.save_steps > 0
-                    and global_step % args.save_steps == 0
-                ):
-                    output_dir = os.path.join(
-                        args.output_dir, f"checkpoint-{global_step}"
-                    )
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir)
-                    model_to_save = (
-                        model.module if hasattr(model, "module") else model
-                    )  # Take care of distributed/parallel training
-                    model_to_save.save_pretrained(output_dir)
-                    torch.save(args, os.path.join(output_dir, "training_args.bin"))
-                    logger.info(f"Saving model checkpoint to {output_dir}")
+                    # Save model checkpoint
+                    if args.save_steps > 0 and global_step % args.save_steps == 0:
+                        output_dir = os.path.join(
+                            args.output_dir, f"checkpoint-{global_step}"
+                        )
+                        if not os.path.exists(output_dir):
+                            os.makedirs(output_dir)
+                        model_to_save = (
+                            model.module if hasattr(model, "module") else model
+                        )  # Take care of distributed/parallel training
+                        model_to_save.save_pretrained(output_dir)
+                        torch.save(args, os.path.join(output_dir, "training_args.bin"))
+                        logger.info(f"Saving model checkpoint to {output_dir}")
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
@@ -378,11 +367,13 @@ def evaluate(args, model, tokenizer, prefix=""):
             # Some models (XLNet, XLM) use 5 arguments for their predictions,
             # while the other "simpler" models only use two.
             if len(output) >= 5:
-                start_logits = output[0]
-                start_top_index = output[1]
-                end_logits = output[2]
-                end_top_index = output[3]
-                cls_logits = output[4]
+                (
+                    start_logits,
+                    start_top_index,
+                    end_logits,
+                    end_top_index,
+                    cls_logits,
+                ) = output[:5]
 
                 result = SquadResult(
                     unique_id,
@@ -977,31 +968,31 @@ def main():
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
         logger.info(f" global_step = {global_step}, average loss = {tr_loss}")
 
-    # Save the trained model and the tokenizer
-    if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        # Create output directory if needed
-        if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
-            os.makedirs(args.output_dir)
+        # Save the trained model and the tokenizer
+        if args.local_rank == -1 or torch.distributed.get_rank() == 0:
+            # Create output directory if needed
+            if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
+                os.makedirs(args.output_dir)
 
-        logger.info(
-            f"Saving model checkpoint to {args.output_dir}",
-        )
-        # Save a trained model, configuration and tokenizer using `save_pretrained()`.
-        # They can then be reloaded using `from_pretrained()`
-        model_to_save = (
-            model.module if hasattr(model, "module") else model
-        )  # Take care of distributed/parallel training
-        model_to_save.save_pretrained(args.output_dir)
-        tokenizer.save_pretrained(args.output_dir)
+            logger.info(
+                f"Saving model checkpoint to {args.output_dir}",
+            )
+            # Save a trained model, configuration and tokenizer using `save_pretrained()`.
+            # They can then be reloaded using `from_pretrained()`
+            model_to_save = (
+                model.module if hasattr(model, "module") else model
+            )  # Take care of distributed/parallel training
+            model_to_save.save_pretrained(args.output_dir)
+            tokenizer.save_pretrained(args.output_dir)
 
-        # Good practice: save your training arguments together with the trained model
-        torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
+            # Good practice: save your training arguments together with the trained model
+            torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
 
-        # Load a trained model and vocabulary that you have fine-tuned
-        model = model_class.from_pretrained(args.output_dir, force_download=True)
-        tokenizer = tokenizer_class.from_pretrained(
-            args.output_dir, do_lower_case=args.do_lower_case
-        )
+            # Load a trained model and vocabulary that you have fine-tuned
+            model = model_class.from_pretrained(args.output_dir, force_download=True)
+            tokenizer = tokenizer_class.from_pretrained(
+                args.output_dir, do_lower_case=args.do_lower_case
+            )
         model.to(args.device)
 
     # Evaluation - we can ask to evaluate all the checkpoints
@@ -1024,25 +1015,20 @@ def main():
                 logging.getLogger("transformers.modeling_utils").setLevel(
                     logging.WARN
                 )  # Reduce model loading logs
+        elif args.eval_all_checkpoints:
+            checkpoints = list(
+                os.path.dirname(c)
+                for c in sorted(
+                    glob.glob(args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True)
+                )
+            )
+            logger.info(f"Loading checkpoint {checkpoints} for evaluation")
+            logging.getLogger("transformers.modeling_utils").setLevel(
+                logging.WARN
+            )  # Reduce model loading logs
         else:
-            if args.eval_all_checkpoints:
-                checkpoints = list(
-                    os.path.dirname(c)
-                    for c in sorted(
-                        glob.glob(
-                            args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True
-                        )
-                    )
-                )
-                logger.info(f"Loading checkpoint {checkpoints} for evaluation")
-                logging.getLogger("transformers.modeling_utils").setLevel(
-                    logging.WARN
-                )  # Reduce model loading logs
-            else:
-                logger.info(
-                    f"Loading checkpoint {args.model_name_or_path} for evaluation"
-                )
-                checkpoints = [args.model_name_or_path]
+            logger.info(f"Loading checkpoint {args.model_name_or_path} for evaluation")
+            checkpoints = [args.model_name_or_path]
 
         logger.info(f"Evaluate the following checkpoints: {checkpoints}")
 
