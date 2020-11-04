@@ -199,19 +199,20 @@ def train(args, train_dataset, model, tokenizer):
 
     # Train!
     logger.info("***** Running training *****")
-    logger.info("  Num examples = %d", len(train_dataset))
-    logger.info("  Num Epochs = %d", args.num_train_epochs)
-    logger.info(
-        "  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size
-    )
-    logger.info(
-        "  Total train batch size (w. parallel, distributed & accumulation) = %d",
+    logger.info(f"  Num examples = {len(train_dataset)}")
+    logger.info(f"  Num Epochs = {args.num_train_epochs}")
+    logger.info(f"  Instantaneous batch size per GPU = {args.per_gpu_train_batch_size}")
+    total_train_batch_size = (
         args.train_batch_size
         * args.gradient_accumulation_steps
-        * (torch.distributed.get_world_size() if args.local_rank != -1 else 1),
+        * (torch.distributed.get_world_size() if args.local_rank != -1 else 1)
     )
-    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
-    logger.info("  Total optimization steps = %d", t_total)
+    logger.info(
+        "  Total train batch size (w. parallel, distributed & accumulation) = "
+        f"{total_train_batch_size}",
+    )
+    logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+    logger.info(f"  Total optimization steps = {t_total}")
 
     global_step = 0
     tr_loss, logging_loss = 0.0, 0.0
@@ -279,7 +280,7 @@ def train(args, train_dataset, model, tokenizer):
                         # otherwise metrics may not average well
                         results = evaluate(args, model, tokenizer)
                         for key, value in results.items():
-                            eval_key = "eval_{}".format(key)
+                            eval_key = f"eval_{key}"
                             logs[eval_key] = value
 
                     loss_scalar = (tr_loss - logging_loss) / args.logging_steps
@@ -290,7 +291,7 @@ def train(args, train_dataset, model, tokenizer):
 
                     for key, value in logs.items():
                         tb_writer.add_scalar(key, value, global_step)
-                    print(json.dumps({**logs, **{"step": global_step}}))
+                    print(json.dumps({**logs, "step": global_step}))
 
                 if (
                     args.local_rank in [-1, 0]
@@ -299,7 +300,7 @@ def train(args, train_dataset, model, tokenizer):
                 ):
                     # Save model checkpoint
                     output_dir = os.path.join(
-                        args.output_dir, "checkpoint-{}".format(global_step)
+                        args.output_dir, f"checkpoint-{global_step}"
                     )
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
@@ -308,7 +309,7 @@ def train(args, train_dataset, model, tokenizer):
                     )  # Take care of distributed/parallel training
                     model_to_save.save_pretrained(output_dir)
                     torch.save(args, os.path.join(output_dir, "training_args.bin"))
-                    logger.info("Saving model checkpoint to %s", output_dir)
+                    logger.info(f"Saving model checkpoint to {output_dir}")
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
@@ -355,9 +356,9 @@ def evaluate(args, model, tokenizer, prefix=""):
             model = torch.nn.DataParallel(model)
 
         # Eval!
-        logger.info("***** Running evaluation {} *****".format(prefix))
-        logger.info("  Num examples = %d", len(eval_dataset))
-        logger.info("  Batch size = %d", args.eval_batch_size)
+        logger.info(f"***** Running evaluation {prefix} *****")
+        logger.info(f"  Num examples = {len(eval_dataset)}")
+        logger.info(f"  Batch size = {args.eval_batch_size}")
         eval_loss = 0.0
         nb_eval_steps = 0
         num_id = 0
@@ -428,11 +429,11 @@ def evaluate(args, model, tokenizer, prefix=""):
 
         output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
         with open(output_eval_file, "a") as writer:
-            logger.info("***** Eval results {} *****".format(prefix))
-            writer.write("***** Eval results %s *****\n" % (str(prefix)))
+            logger.info(f"***** Eval results {prefix} *****")
+            writer.write(f"***** Eval results {prefix} *****\n")
             for key in sorted(result.keys()):
-                logger.info("  %s = %s", key, str(result[key]))
-                writer.write("%s = %s\n" % (key, str(result[key])))
+                logger.info(f"  {key} = {result[key]}")
+                writer.write(f"{key} = {result[key]}\n")
 
     return results
 
@@ -474,9 +475,9 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, predict=False
         label_list=label_list,
         max_length=args.max_seq_length,
         output_mode=output_mode,
-        pad_on_left=bool(args.model_type in ["xlnet"]),  # pad on the left for xlnet
+        pad_on_left=args.model_type == "xlnet",  # pad on the left for xlnet
         pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-        pad_token_segment_id=4 if args.model_type in ["xlnet"] else 0,
+        pad_token_segment_id=4 if args.model_type == "xlnet" else 0,
         output_feature=True,
     )
     # if args.local_rank in [-1, 0]:
@@ -536,7 +537,7 @@ def main():
         default=None,
         type=str,
         required=True,
-        help="Model type selected in the list: " + ", ".join(MODEL_CLASSES.keys()),
+        help="Model type selected in the list: " + ", ".join(MODEL_CLASSES),
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -552,7 +553,7 @@ def main():
         type=str,
         required=True,
         help="The name of the task to train selected in the list: "
-        + ", ".join(processors.keys()),
+        + ", ".join(processors),
     )
     parser.add_argument(
         "--output_dir",
@@ -742,9 +743,9 @@ def main():
     ):
         raise ValueError(
             (
-                "Output directory ({}) already exists and is not empty."
+                f"Output directory ({args.output_dir}) already exists and is not empty."
                 " Use --overwrite_output_dir to overcome."
-            ).format(args.output_dir)
+            )
         )
 
     # Setup distant debugging if needed
@@ -782,14 +783,10 @@ def main():
     )
     logger.warning(
         (
-            "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, "
-            "16-bits training: %s"
+            f"Process rank: {args.local_rank}, device: {device}, n_gpu: {args.n_gpu}, "
+            f"distributed training: {args.local_rank != -1}, "
+            f"16-bits training: {args.fp16}"
         ),
-        args.local_rank,
-        device,
-        args.n_gpu,
-        bool(args.local_rank != -1),
-        args.fp16,
     )
 
     # Set seed
@@ -798,7 +795,7 @@ def main():
     # Prepare GLUE task
     args.task_name = args.task_name.lower()
     if args.task_name not in processors:
-        raise ValueError("Task not found: %s" % (args.task_name))
+        raise ValueError(f"Task not found: {args.task_name}")
     processor = processors[args.task_name]()
     args.output_mode = output_modes[args.task_name]
     label_list = processor.get_labels()
@@ -837,7 +834,7 @@ def main():
 
     model.to(args.device)
 
-    logger.info("Training/evaluation parameters %s", args)
+    logger.info(f"Training/evaluation parameters {args}")
 
     # Training
     if args.do_train:
@@ -845,7 +842,7 @@ def main():
             args, args.task_name, tokenizer, evaluate=False
         )
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
-        logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
+        logger.info(f" global_step = {global_step}, average loss = {tr_loss}")
 
     # Saving best-practices:
     # if you use defaults names for the model, you can reload it using from_pretrained()
@@ -854,7 +851,7 @@ def main():
         if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(args.output_dir)
 
-        logger.info("Saving model checkpoint to %s", args.output_dir)
+        logger.info(f"Saving model checkpoint to {args.output_dir}")
         # Save a trained model, configuration and tokenizer using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
         model_to_save = (
@@ -888,7 +885,7 @@ def main():
             logging.getLogger("transformers.modeling_utils").setLevel(
                 logging.WARN
             )  # Reduce logging
-        logger.info("Evaluate the following checkpoints: %s", checkpoints)
+        logger.info(f"Evaluate the following checkpoints: {checkpoints}")
         for checkpoint in checkpoints:
             global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
             prefix = (
@@ -898,7 +895,7 @@ def main():
             model = model_class.from_pretrained(checkpoint)
             model.to(args.device)
             result = evaluate(args, model, tokenizer, prefix=prefix)
-            result = dict((k + "_{}".format(global_step), v) for k, v in result.items())
+            result = {f"{k}_{global_step}": v for k, v in result.items()}
             results.update(result)
 
     if args.do_predict and args.local_rank in [-1, 0]:
@@ -924,8 +921,8 @@ def main():
 
         # Eval!
         logger.info("***** Running evaluation *****")
-        logger.info("  Num examples = %d", len(eval_dataset))
-        logger.info("  Batch size = %d", args.eval_batch_size)
+        logger.info(f"  Num examples = {len(eval_dataset)}")
+        logger.info(f"  Batch size = {args.eval_batch_size}")
         num_id = 0
         key_map = {}
         cnt_map = {}

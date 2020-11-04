@@ -188,19 +188,22 @@ def train(args, train_dataset, model, tokenizer):
 
     # Train!
     logger.info("***** Running training *****")
-    logger.info("  Num examples = %d", len(train_dataset))
-    logger.info("  Num Epochs = %d", args.num_train_epochs)
     logger.info(
-        "  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size
+        f"  Num examples = {len(train_dataset)}",
     )
-    logger.info(
-        "  Total train batch size (w. parallel, distributed & accumulation) = %d",
+    logger.info(f"  Num Epochs = {args.num_train_epochs}")
+    logger.info(f"  Instantaneous batch size per GPU = {args.per_gpu_train_batch_size}")
+    total_train_batch_size = (
         args.train_batch_size
         * args.gradient_accumulation_steps
-        * (torch.distributed.get_world_size() if args.local_rank != -1 else 1),
+        * (torch.distributed.get_world_size() if args.local_rank != -1 else 1)
     )
-    logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
-    logger.info("  Total optimization steps = %d", t_total)
+    logger.info(
+        "  Total train batch size (w. parallel, distributed & accumulation) = "
+        f"{total_train_batch_size}",
+    )
+    logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+    logger.info(f"  Total optimization steps = {t_total}")
 
     global_step = 1
     tr_loss, logging_loss = 0.0, 0.0
@@ -278,9 +281,7 @@ def train(args, train_dataset, model, tokenizer):
                         # otherwise metrics may not average well
                         results = evaluate(args, model, tokenizer)
                         for key, value in results.items():
-                            tb_writer.add_scalar(
-                                "eval_{}".format(key), value, global_step
-                            )
+                            tb_writer.add_scalar(f"eval_{key}", value, global_step)
                     tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
                     tb_writer.add_scalar(
                         "loss",
@@ -296,7 +297,7 @@ def train(args, train_dataset, model, tokenizer):
                     and global_step % args.save_steps == 0
                 ):
                     output_dir = os.path.join(
-                        args.output_dir, "checkpoint-{}".format(global_step)
+                        args.output_dir, f"checkpoint-{global_step}"
                     )
                     if not os.path.exists(output_dir):
                         os.makedirs(output_dir)
@@ -305,7 +306,7 @@ def train(args, train_dataset, model, tokenizer):
                     )  # Take care of distributed/parallel training
                     model_to_save.save_pretrained(output_dir)
                     torch.save(args, os.path.join(output_dir, "training_args.bin"))
-                    logger.info("Saving model checkpoint to %s", output_dir)
+                    logger.info(f"Saving model checkpoint to {output_dir}")
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
@@ -341,9 +342,9 @@ def evaluate(args, model, tokenizer, prefix=""):
         model = torch.nn.DataParallel(model)
 
     # Eval!
-    logger.info("***** Running evaluation {} *****".format(prefix))
-    logger.info("  Num examples = %d", len(dataset))
-    logger.info("  Batch size = %d", args.eval_batch_size)
+    logger.info(f"***** Running evaluation {prefix} *****")
+    logger.info(f"  Num examples = {len(dataset)}")
+    logger.info(f"  Batch size = {args.eval_batch_size}")
 
     all_results = []
     start_time = timeit.default_timer()
@@ -400,25 +401,21 @@ def evaluate(args, model, tokenizer, prefix=""):
 
     evalTime = timeit.default_timer() - start_time
     logger.info(
-        "  Evaluation done in total %f secs (%f sec per example)",
-        evalTime,
-        evalTime / len(dataset),
+        f"  Evaluation done in total {evalTime} secs "
+        f"({evalTime / len(dataset)} sec per example)",
     )
 
     # Compute predictions
-    output_prediction_file = os.path.join(
-        args.output_dir, "predictions_{}.json".format(prefix)
-    )
+    output_prediction_file = os.path.join(args.output_dir, f"predictions_{prefix}.json")
     # output_nbest_file = os.path.join(
     #     args.output_dir, "nbest_predictions_{}.json".format(prefix)
     # )
 
-    if args.version_2_with_negative:
-        output_null_log_odds_file = os.path.join(
-            args.output_dir, "null_odds_{}.json".format(prefix)
-        )
-    else:
-        output_null_log_odds_file = None
+    output_null_log_odds_file = (
+        os.path.join(args.output_dir, f"null_odds_{prefix}.json")
+        if args.version_2_with_negative
+        else None
+    )
 
     # XLNet and XLM use a more complex post-processing procedure
     # if args.model_type in ["xlnet", "xlm"]:
@@ -484,13 +481,12 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
 
     # Load data features from cache or dataset file
     input_dir = args.data_dir if args.data_dir else "."
+
     cached_features_file = os.path.join(
         input_dir,
-        "cached_{}_{}_{}".format(
-            "dev" if evaluate else "train",
-            list(filter(None, args.model_name_or_path.split("/"))).pop(),
-            str(args.max_seq_length),
-        ),
+        f"cached_{'dev' if evaluate else 'train'}_"
+        f"{list(filter(None, args.model_name_or_path.split('/'))).pop()}_"
+        f"{args.max_seq_length}",
     )
 
     # Init features and dataset from cache if it exists
@@ -499,14 +495,14 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         and not args.overwrite_cache
         and not output_examples
     ):
-        logger.info("Loading features from cached file %s", cached_features_file)
+        logger.info(f"Loading features from cached file {cached_features_file}")
         features_and_dataset = torch.load(cached_features_file)
         features, dataset = (
             features_and_dataset["features"],
             features_and_dataset["dataset"],
         )
     else:
-        logger.info("Creating features from dataset file at %s", input_dir)
+        logger.info(f"Creating features from dataset file at {input_dir}")
 
         if not args.data_dir and (
             (evaluate and not args.predict_file)
@@ -534,14 +530,13 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                 else SquadV1Processor()
             )
 
-            if evaluate:
-                examples = processor.get_dev_examples(
-                    args.data_dir, filename=args.predict_file
-                )
-            else:
-                examples = processor.get_train_examples(
+            examples = (
+                processor.get_dev_examples(args.data_dir, filename=args.predict_file)
+                if evaluate
+                else processor.get_train_examples(
                     args.data_dir, filename=args.train_file
                 )
+            )
 
         features, dataset = squad_convert_examples_to_features(
             examples=examples,
@@ -554,7 +549,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         )
 
         if args.local_rank in [-1, 0]:
-            logger.info("Saving features into cached file %s", cached_features_file)
+            logger.info(f"Saving features into cached file {cached_features_file}")
             torch.save({"features": features, "dataset": dataset}, cached_features_file)
 
     if args.local_rank == 0 and not evaluate:
@@ -576,7 +571,7 @@ def main():
         default=None,
         type=str,
         required=True,
-        help="Model type selected in the list: " + ", ".join(MODEL_CLASSES.keys()),
+        help="Model type selected in the list: " + ", ".join(MODEL_CLASSES),
     )
     parser.add_argument(
         "--model_name_or_path",
@@ -869,9 +864,9 @@ def main():
     ):
         raise ValueError(
             (
-                "Output directory ({}) already exists and is not empty. "
-                "Use --overwrite_output_dir to overcome."
-            ).format(args.output_dir)
+                f"Output directory ({args.output_dir}) already exists and is not empty."
+                " Use --overwrite_output_dir to overcome."
+            )
         )
 
     # Setup distant debugging if needed
@@ -909,14 +904,10 @@ def main():
     )
     logger.warning(
         (
-            "Process rank: %s, device: %s, n_gpu: %s, "
-            "distributed training: %s, 16-bits training: %s"
-        ),
-        args.local_rank,
-        device,
-        args.n_gpu,
-        bool(args.local_rank != -1),
-        args.fp16,
+            f"Process rank: {args.local_rank}, device: {device}, "
+            f"n_gpu: {args.n_gpu}, distributed training: {args.local_rank != -1}, "
+            f"16-bits training: {args.fp16}"
+        )
     )
 
     # Set seed
@@ -930,14 +921,16 @@ def main():
 
     args.model_type = args.model_type.lower()
     config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+
+    cache_dir = args.cache_dir if args.cache_dir else None
     config = config_class.from_pretrained(
         args.config_name if args.config_name else args.model_name_or_path,
-        cache_dir=args.cache_dir if args.cache_dir else None,
+        cache_dir=cache_dir,
     )
     tokenizer = tokenizer_class.from_pretrained(
         args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
         do_lower_case=args.do_lower_case,
-        cache_dir=args.cache_dir if args.cache_dir else None,
+        cache_dir=cache_dir,
     )
     # print(tokenizer.padding_side)
     # tokenizer.padding_side = args.padding_side
@@ -945,9 +938,9 @@ def main():
 
     model = model_class.from_pretrained(
         args.model_name_or_path,
-        from_tf=bool(".ckpt" in args.model_name_or_path),
+        from_tf=".ckpt" in args.model_name_or_path,
         config=config,
-        cache_dir=args.cache_dir if args.cache_dir else None,
+        cache_dir=cache_dir,
     )
 
     if args.local_rank == 0:
@@ -957,7 +950,7 @@ def main():
 
     model.to(args.device)
 
-    logger.info("Training/evaluation parameters %s", args)
+    logger.info(f"Training/evaluation parameters {args}")
 
     # Before we do anything with models, we want to ensure that we get fp16 execution
     # of torch.einsum if args.fp16 is set.
@@ -967,8 +960,6 @@ def main():
     if args.fp16:
         try:
             import apex
-
-            apex.amp.register_half_function(torch, "einsum")
         except ImportError:
             raise ImportError(
                 (
@@ -976,6 +967,7 @@ def main():
                     "https://www.github.com/nvidia/apex to use fp16 training."
                 )
             )
+        apex.amp.register_half_function(torch, "einsum")
 
     # Training
     if args.do_train:
@@ -983,7 +975,7 @@ def main():
             args, tokenizer, evaluate=False, output_examples=False
         )
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
-        logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
+        logger.info(f" global_step = {global_step}, average loss = {tr_loss}")
 
     # Save the trained model and the tokenizer
     if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
@@ -991,7 +983,9 @@ def main():
         if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(args.output_dir)
 
-        logger.info("Saving model checkpoint to %s", args.output_dir)
+        logger.info(
+            f"Saving model checkpoint to {args.output_dir}",
+        )
         # Save a trained model, configuration and tokenizer using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
         model_to_save = (
@@ -1040,17 +1034,17 @@ def main():
                         )
                     )
                 )
-                logger.info("Loading checkpoint %s for evaluation", checkpoints)
+                logger.info(f"Loading checkpoint {checkpoints} for evaluation")
                 logging.getLogger("transformers.modeling_utils").setLevel(
                     logging.WARN
                 )  # Reduce model loading logs
             else:
                 logger.info(
-                    "Loading checkpoint %s for evaluation", args.model_name_or_path
+                    f"Loading checkpoint {args.model_name_or_path} for evaluation"
                 )
                 checkpoints = [args.model_name_or_path]
 
-        logger.info("Evaluate the following checkpoints: %s", checkpoints)
+        logger.info(f"Evaluate the following checkpoints: {checkpoints}")
 
         for checkpoint in checkpoints:
             # Reload the model
@@ -1061,17 +1055,17 @@ def main():
             # Evaluate
             result = evaluate(args, model, tokenizer, prefix=global_step)
 
-            result = dict(
-                (k + ("_{}".format(global_step) if global_step else ""), v)
+            result = {
+                (f"{k}_{global_step}" if global_step else k): v
                 for k, v in result.items()
-            )
+            }
             results.update(result)
 
-    logger.info("Results: {}".format(results))
+    logger.info(f"Results: {results}")
     with open(os.path.join(args.output_dir, "result.txt"), "a") as writer:
-        for key in sorted(results.keys()):
-            logger.info("  %s = %s", key, str(results[key]))
-            writer.write("%s = %s\t" % (key, str(results[key])))
+        for key in sorted(results):
+            logger.info(f"  {key} = {results[key]}")
+            writer.write(f"{key} = {results[key]}\t")
             writer.write("\t\n")
     return results
 
