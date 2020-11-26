@@ -37,6 +37,12 @@ from transformers.data.processors.squad import (
     SquadV2Processor,
 )
 
+from transformers.data.metrics.squad_metrics import (
+    compute_predictions_logits,
+    compute_predictions_log_probs,
+    squad_evaluate,
+)
+
 from evaluate_official2 import eval_squad
 
 try:
@@ -398,9 +404,9 @@ def evaluate(args, model, tokenizer, prefix=""):
 
     # Compute predictions
     output_prediction_file = os.path.join(args.output_dir, f"predictions_{prefix}.json")
-    # output_nbest_file = os.path.join(
-    #     args.output_dir, "nbest_predictions_{}.json".format(prefix)
-    # )
+    output_nbest_file = os.path.join(
+        args.output_dir, "nbest_predictions_{}.json".format(prefix)
+    )
 
     output_null_log_odds_file = (
         os.path.join(args.output_dir, f"null_odds_{prefix}.json")
@@ -409,48 +415,48 @@ def evaluate(args, model, tokenizer, prefix=""):
     )
 
     # XLNet and XLM use a more complex post-processing procedure
-    # if args.model_type in ["xlnet", "xlm"]:
-    #     start_n_top = (
-    #         model.config.start_n_top
-    #         if hasattr(model, "config")
-    #         else model.module.config.start_n_top
-    #     )
-    #     end_n_top = (
-    #         model.config.end_n_top
-    #         if hasattr(model, "config")
-    #         else model.module.config.end_n_top
-    #     )
+    if args.model_type in ["xlnet", "xlm"]:
+        start_n_top = (
+            model.config.start_n_top
+            if hasattr(model, "config")
+            else model.module.config.start_n_top
+        )
+        end_n_top = (
+            model.config.end_n_top
+            if hasattr(model, "config")
+            else model.module.config.end_n_top
+        )
 
-    #     predictions = compute_predictions_log_probs(
-    #         examples,
-    #         features,
-    #         all_results,
-    #         args.n_best_size,
-    #         args.max_answer_length,
-    #         output_prediction_file,
-    #         output_nbest_file,
-    #         output_null_log_odds_file,
-    #         start_n_top,
-    #         end_n_top,
-    #         args.version_2_with_negative,
-    #         tokenizer,
-    #         args.verbose_logging,
-    #     )
-    # else:
-    #     predictions = compute_predictions_logits(
-    #         examples,
-    #         features,
-    #         all_results,
-    #         args.n_best_size,
-    #         args.max_answer_length,
-    #         args.do_lower_case,
-    #         output_prediction_file,
-    #         output_nbest_file,
-    #         output_null_log_odds_file,
-    #         args.verbose_logging,
-    #         args.version_2_with_negative,
-    #         args.null_score_diff_threshold,
-    #     )
+        predictions = compute_predictions_log_probs(
+            examples,
+            features,
+            all_results,
+            args.n_best_size,
+            args.max_answer_length,
+            output_prediction_file,
+            output_nbest_file,
+            output_null_log_odds_file,
+            start_n_top,
+            end_n_top,
+            args.version_2_with_negative,
+            tokenizer,
+            args.verbose_logging,
+        )
+    else:
+        predictions = compute_predictions_logits(
+            examples,
+            features,
+            all_results,
+            args.n_best_size,
+            args.max_answer_length,
+            args.do_lower_case,
+            output_prediction_file,
+            output_nbest_file,
+            output_null_log_odds_file,
+            args.verbose_logging,
+            args.version_2_with_negative,
+            args.null_score_diff_threshold,
+        )
 
     # Compute the F1 and exact scores.
     # results = squad_evaluate(examples, predictions)
