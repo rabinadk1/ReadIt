@@ -31,16 +31,14 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
+from transformers.data.metrics.squad_metrics import (
+    compute_predictions_log_probs,
+    compute_predictions_logits,
+)
 from transformers.data.processors.squad import (
     SquadResult,
     SquadV1Processor,
     SquadV2Processor,
-)
-
-from transformers.data.metrics.squad_metrics import (
-    compute_predictions_logits,
-    compute_predictions_log_probs,
-    squad_evaluate,
 )
 
 from evaluate_official2 import eval_squad
@@ -427,7 +425,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             else model.module.config.end_n_top
         )
 
-        predictions = compute_predictions_log_probs(
+        compute_predictions_log_probs(
             examples,
             features,
             all_results,
@@ -443,7 +441,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             args.verbose_logging,
         )
     else:
-        predictions = compute_predictions_logits(
+        compute_predictions_logits(
             examples,
             features,
             all_results,
@@ -983,7 +981,8 @@ def main():
             logger.info(
                 f"Saving model checkpoint to {args.output_dir}",
             )
-            # Save a trained model, configuration and tokenizer using `save_pretrained()`.
+            # Save a trained model, configuration and
+            # tokenizer using `save_pretrained()`.
             # They can then be reloaded using `from_pretrained()`
             model_to_save = (
                 model.module if hasattr(model, "module") else model
@@ -991,7 +990,8 @@ def main():
             model_to_save.save_pretrained(args.output_dir)
             tokenizer.save_pretrained(args.output_dir)
 
-            # Good practice: save your training arguments together with the trained model
+            # Good practice: save your training arguments
+            # together with the trained model
             torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
 
             # Load a trained model and vocabulary that you have fine-tuned
