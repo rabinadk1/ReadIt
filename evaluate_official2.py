@@ -12,12 +12,13 @@ import os
 import re
 import string
 import sys
+from typing import List, Mapping, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         "Official evaluation script for SQuAD version 2.0."
     )
@@ -69,7 +70,7 @@ def make_qid_to_has_ans(dataset):
     return qid_to_has_ans
 
 
-def normalize_answer(s):
+def normalize_answer(s: str) -> str:
     """Lower text and remove punctuation, articles and extra whitespace."""
 
     def remove_articles(text):
@@ -89,17 +90,17 @@ def normalize_answer(s):
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
-def get_tokens(s):
+def get_tokens(s: str) -> Union[str, list]:
     if not s:
         return []
     return normalize_answer(s).split()
 
 
-def compute_exact(a_gold, a_pred):
+def compute_exact(a_gold: str, a_pred: str) -> int:
     return int(normalize_answer(a_gold) == normalize_answer(a_pred))
 
 
-def compute_f1(a_gold, a_pred):
+def compute_f1(a_gold: str, a_pred: str) -> Union[float, int]:
     gold_toks = get_tokens(a_gold)
     pred_toks = get_tokens(a_pred)
     common = collections.Counter(gold_toks) & collections.Counter(pred_toks)
@@ -115,7 +116,7 @@ def compute_f1(a_gold, a_pred):
     return f1
 
 
-def get_raw_scores(dataset, preds):
+def get_raw_scores(dataset, preds) -> Tuple[dict, dict]:
     exact_scores = {}
     f1_scores = {}
     for article in dataset:
@@ -140,7 +141,9 @@ def get_raw_scores(dataset, preds):
     return exact_scores, f1_scores
 
 
-def apply_no_ans_threshold(scores, na_probs, qid_to_has_ans, na_prob_thresh):
+def apply_no_ans_threshold(
+    scores: dict, na_probs: dict, qid_to_has_ans: dict, na_prob_thresh: float
+) -> dict:
     new_scores = {}
     for qid, s in scores.items():
         new_scores[qid] = (
@@ -149,7 +152,9 @@ def apply_no_ans_threshold(scores, na_probs, qid_to_has_ans, na_prob_thresh):
     return new_scores
 
 
-def make_eval_dict(exact_scores, f1_scores, qid_list=None):
+def make_eval_dict(
+    exact_scores: dict, f1_scores: dict, qid_list: Optional[list] = None
+) -> collections.OrderedDict:
     if not qid_list:
         total = len(exact_scores)
         return collections.OrderedDict(
@@ -170,12 +175,14 @@ def make_eval_dict(exact_scores, f1_scores, qid_list=None):
         )
 
 
-def merge_eval(main_eval, new_eval, prefix):
+def merge_eval(main_eval: dict, new_eval: dict, prefix: str):
     for k in new_eval:
         main_eval[f"{prefix}_{k}"] = new_eval[k]
 
 
-def plot_pr_curve(precisions, recalls, out_image, title):
+def plot_pr_curve(
+    precisions: List[float], recalls: List[float], out_image: str, title: str
+):
     plt.step(recalls, precisions, color="b", alpha=0.2, where="post")
     plt.fill_between(recalls, precisions, step="post", alpha=0.2, color="b")
     plt.xlabel("Recall")
@@ -188,8 +195,13 @@ def plot_pr_curve(precisions, recalls, out_image, title):
 
 
 def make_precision_recall_eval(
-    scores, na_probs, num_true_pos, qid_to_has_ans, out_image=None, title=None
-):
+    scores: dict,
+    na_probs: dict,
+    num_true_pos: int,
+    qid_to_has_ans: dict,
+    out_image: Optional[str] = None,
+    title: Optional[str] = None,
+) -> Mapping[str, float]:
     qid_list = sorted(na_probs, key=lambda k: na_probs[k])
     true_pos = 0.0
     cur_p = 1.0
@@ -200,8 +212,8 @@ def make_precision_recall_eval(
     for i, qid in enumerate(qid_list):
         if qid_to_has_ans[qid]:
             true_pos += scores[qid]
-        cur_p = true_pos / float(i + 1)
-        cur_r = true_pos / float(num_true_pos)
+        cur_p = true_pos / (i + 1)
+        cur_r = true_pos / num_true_pos
         if i == len(qid_list) - 1 or na_probs[qid] != na_probs[qid_list[i + 1]]:
             # i.e., if we can put a threshold after this point
             avg_prec += cur_p * (cur_r - recalls[-1])
@@ -209,13 +221,18 @@ def make_precision_recall_eval(
             recalls.append(cur_r)
     if out_image:
         plot_pr_curve(precisions, recalls, out_image, title)
-    return {"ap": 100.0 * avg_prec}
+    return {"ap": 100 * avg_prec}
 
 
 def run_precision_recall_analysis(
-    main_eval, exact_raw, f1_raw, na_probs, qid_to_has_ans, out_image_dir
+    main_eval: dict,
+    exact_raw: dict,
+    f1_raw: dict,
+    na_probs: dict,
+    qid_to_has_ans: dict,
+    out_image_dir: str,
 ):
-    if out_image_dir and not os.path.exists(out_image_dir):
+    if not os.path.exists(out_image_dir):
         os.makedirs(out_image_dir)
     num_true_pos = sum(1 for v in qid_to_has_ans.values() if v)
     if num_true_pos == 0:
@@ -250,7 +267,7 @@ def run_precision_recall_analysis(
     merge_eval(main_eval, pr_oracle, "pr_oracle")
 
 
-def histogram_na_prob(na_probs, qid_list, image_dir, name):
+def histogram_na_prob(na_probs: dict, qid_list: list, image_dir: str, name: str):
     if not qid_list:
         return
     x = [na_probs[k] for k in qid_list]
@@ -263,7 +280,9 @@ def histogram_na_prob(na_probs, qid_list, image_dir, name):
     plt.clf()
 
 
-def find_best_thresh(preds, scores, na_probs, qid_to_has_ans):
+def find_best_thresh(
+    preds: Union[list, dict], scores: dict, na_probs: dict, qid_to_has_ans: dict
+) -> Tuple[float, float]:
     num_no_ans = sum(1 for k in qid_to_has_ans if not qid_to_has_ans[k])
     cur_score = num_no_ans
     best_score = cur_score
@@ -282,10 +301,17 @@ def find_best_thresh(preds, scores, na_probs, qid_to_has_ans):
         if cur_score > best_score:
             best_score = cur_score
             best_thresh = na_probs[qid]
-    return 100.0 * best_score / len(scores), best_thresh
+    return 100 * best_score / len(scores), best_thresh
 
 
-def find_all_best_thresh(main_eval, preds, exact_raw, f1_raw, na_probs, qid_to_has_ans):
+def find_all_best_thresh(
+    main_eval: dict,
+    preds: Union[dict, list],
+    exact_raw: dict,
+    f1_raw: dict,
+    na_probs: dict,
+    qid_to_has_ans: dict,
+):
     best_exact, exact_thresh = find_best_thresh(
         preds, exact_raw, na_probs, qid_to_has_ans
     )
@@ -296,15 +322,21 @@ def find_all_best_thresh(main_eval, preds, exact_raw, f1_raw, na_probs, qid_to_h
     main_eval["best_f1_thresh"] = f1_thresh
 
 
-def eval_squad(data_file, pred_file, na_prob_file, na_prob_thresh, out_image_dir=None):
+def eval_squad(
+    data_file: str,
+    pred_file: str,
+    na_prob_file: Optional[str],
+    na_prob_thresh: float,
+    out_image_dir: Optional[str] = None,
+):
     with open(data_file) as f:
-        dataset_json = json.load(f)
-        dataset = dataset_json["data"]
+        dataset_json: dict = json.load(f)
+        dataset: Union[dict, list] = dataset_json["data"]
     with open(pred_file) as f:
-        preds = json.load(f)
+        preds: Union[dict, list] = json.load(f)
     if na_prob_file:
         with open(na_prob_file) as f:
-            na_probs = json.load(f)
+            na_probs: dict = json.load(f)
     else:
         na_probs = {k: 0.0 for k in preds}
     qid_to_has_ans = make_qid_to_has_ans(dataset)  # maps qid to True/False
