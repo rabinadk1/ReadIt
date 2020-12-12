@@ -2,7 +2,7 @@ import argparse
 import logging
 import os
 import random
-from typing import Mapping
+from typing import Any, Mapping, Tuple
 
 import numpy as np
 import torch
@@ -26,7 +26,9 @@ def set_seed(args: argparse.Namespace):
         torch.cuda.manual_seed_all(args.seed)
 
 
-def base_train(args: argparse.Namespace, train_dataset, model, logger: logging.Logger):
+def base_train(
+    args: argparse.Namespace, train_dataset, model, logger: logging.Logger
+) -> Tuple[Any, Any, Any, Any, Any, float, float, Any]:
     """ Base for training the model """
     if args.local_rank in [-1, 0]:
         tb_writer = SummaryWriter()
@@ -154,6 +156,7 @@ def base_train(args: argparse.Namespace, train_dataset, model, logger: logging.L
 def BaseParser(
     ALL_MODELS: tuple, MODEL_CLASSES: Mapping[str, tuple]
 ) -> argparse.ArgumentParser:
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -342,10 +345,15 @@ def BaseParser(
         "--server_port", type=str, default="", help="For distant debugging."
     )
 
+    return parser
+
 
 def base_main(
-    parser: argparse.ArgumentParser, logger: logging.Logger, MODEL_CLASSES, is_cls: bool
-):
+    parser: argparse.ArgumentParser,
+    logger: logging.Logger,
+    MODEL_CLASSES: Mapping[str, tuple],
+    is_cls: bool,
+) -> Tuple[argparse.Namespace, Any, Any, Any, Any]:
     if is_cls:
         from transformers import glue_output_modes as output_modes
         from transformers import glue_processors as processors
