@@ -51,14 +51,10 @@ from transformers.data.metrics.squad_metrics import (
     compute_predictions_log_probs,
     compute_predictions_logits,
 )
-from transformers.data.processors.squad import (
-    SquadResult,
-    SquadV1Processor,
-    SquadV2Processor,
-)
+from transformers.data.processors.squad import SquadResult, SquadV1Processor
 
-from evaluate_official2 import eval_squad
-from run_base import BaseParser, base_main, base_train
+# from evaluate_official2 import eval_squad
+from run_base import BaseParser, CustomSquadV2Processor, base_main, base_train
 
 logger = logging.getLogger(__name__)
 
@@ -343,13 +339,13 @@ def evaluate(args, model, tokenizer, prefix=""):
     # Compute the F1 and exact scores.
     # results = squad_evaluate(examples, predictions)
     # SQuAD 2.0
-    results = eval_squad(
-        os.path.join(args.data_dir, args.predict_file),
-        output_prediction_file,
-        output_null_log_odds_file,
-        args.null_score_diff_threshold,
-    )
-    return results
+    # results = eval_squad(
+    #     os.path.join(args.data_dir, args.predict_file),
+    #     output_prediction_file,
+    #     output_null_log_odds_file,
+    #     args.null_score_diff_threshold,
+    # )
+    # return results
 
 
 def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=False):
@@ -404,7 +400,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
             )
         else:
             processor = (
-                SquadV2Processor()
+                CustomSquadV2Processor()
                 if args.version_2_with_negative
                 else SquadV1Processor()
             )
@@ -614,7 +610,7 @@ def main():
 
     # Evaluation - we can ask to evaluate all the checkpoints
     # (sub-directories) in a directory
-    results = {}
+    # results = {}
     if args.do_eval and args.local_rank in [-1, 0]:
 
         if args.do_train:
@@ -656,21 +652,22 @@ def main():
             model.to(args.device)
 
             # Evaluate
-            result = evaluate(args, model, tokenizer, prefix=global_step)
+            # result = evaluate(args, model, tokenizer, prefix=global_step)
+            evaluate(args, model, tokenizer, prefix=global_step)
 
-            result = {
-                (f"{k}_{global_step}" if global_step else k): v
-                for k, v in result.items()
-            }
-            results.update(result)
+            # result = {
+            #     (f"{k}_{global_step}" if global_step else k): v
+            #     for k, v in result.items()
+            # }
+            # results.update(result)
 
-    logger.info(f"Results: {results}")
-    with open(os.path.join(args.output_dir, "result.txt"), "a") as writer:
-        for key in sorted(results):
-            logger.info(f"  {key} = {results[key]}")
-            writer.write(f"{key} = {results[key]}\t")
-            writer.write("\t\n")
-    return results
+    # logger.info(f"Results: {results}")
+    # with open(os.path.join(args.output_dir, "result.txt"), "a") as writer:
+    #     for key in sorted(results):
+    #         logger.info(f"  {key} = {results[key]}")
+    #         writer.write(f"{key} = {results[key]}\t")
+    #         writer.write("\t\n")
+    # return results
 
 
 if __name__ == "__main__":
