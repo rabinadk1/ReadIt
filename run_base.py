@@ -475,7 +475,8 @@ def base_main(
 
     return args, model, model_class, tokenizer, tokenizer_class
 
-
+# Made a custom processor to remove the answer loading part
+# This helps in prediction
 class CustomSquadV2Processor(SquadV2Processor):
     def _create_examples(self, input_data, set_type):
         is_training = set_type == "train"
