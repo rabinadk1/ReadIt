@@ -1,6 +1,10 @@
 import collections
 
-from transformers.data.metrics.squad_metrics import get_final_text, _get_best_indexes
+from transformers.data.metrics.squad_metrics import (
+    get_final_text,
+    _get_best_indexes,
+    _compute_softmax,
+)
 
 
 def custom_compute_predictions_logits(

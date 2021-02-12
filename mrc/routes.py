@@ -3,7 +3,7 @@ from . import app
 
 from flask import jsonify
 
-# a simple page that says hello
+
 @app.route("/")
 def hello():
     return jsonify({"message": "Hello, MRC topper!"})
