@@ -24,6 +24,7 @@ import glob
 import logging
 import os
 import timeit
+import collections
 
 import torch
 from torch.utils.data import DataLoader, SequentialSampler
@@ -47,9 +48,9 @@ from transformers import (
     XLNetTokenizer,
     squad_convert_examples_to_features,
 )
-from transformers.data.metrics.squad_metrics import (
-    compute_predictions_log_probs,
-    compute_predictions_logits,
+from .custom_predict import (
+    custom_compute_predictions_log_probs,
+    custom_compute_predictions_logits,
 )
 from transformers.data.processors.squad import SquadResult, SquadV1Processor
 
@@ -199,6 +200,9 @@ def evaluate(args, model, tokenizer, prefix=""):
         args, tokenizer, evaluate=True, output_examples=True
     )
 
+    # NOTE: added to compute the prediction
+    prediction = collections.OrderedDict()
+
     if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
         os.makedirs(args.output_dir)
 
@@ -281,16 +285,16 @@ def evaluate(args, model, tokenizer, prefix=""):
     )
 
     # Compute predictions
-    output_prediction_file = os.path.join(args.output_dir, f"predictions_{prefix}.json")
-    output_nbest_file = os.path.join(
-        args.output_dir, "nbest_predictions_{}.json".format(prefix)
-    )
+    # output_prediction_file = os.path.join(args.output_dir, f"predictions_{prefix}.json")
+    # output_nbest_file = os.path.join(
+    #     args.output_dir, "nbest_predictions_{}.json".format(prefix)
+    # )
 
-    output_null_log_odds_file = (
-        os.path.join(args.output_dir, f"null_odds_{prefix}.json")
-        if args.version_2_with_negative
-        else None
-    )
+    # output_null_log_odds_file = (
+    #     os.path.join(args.output_dir, f"null_odds_{prefix}.json")
+    #     if args.version_2_with_negative
+    #     else None
+    # )
 
     # XLNet and XLM use a more complex post-processing procedure
     if args.model_type in ["xlnet", "xlm"]:
@@ -305,15 +309,12 @@ def evaluate(args, model, tokenizer, prefix=""):
             else model.module.config.end_n_top
         )
 
-        compute_predictions_log_probs(
+        prediction = custom_compute_predictions_log_probs(
             examples,
             features,
             all_results,
             args.n_best_size,
             args.max_answer_length,
-            output_prediction_file,
-            output_nbest_file,
-            output_null_log_odds_file,
             start_n_top,
             end_n_top,
             args.version_2_with_negative,
@@ -321,16 +322,13 @@ def evaluate(args, model, tokenizer, prefix=""):
             args.verbose_logging,
         )
     else:
-        compute_predictions_logits(
+        prediction = custom_compute_predictions_logits(
             examples,
             features,
             all_results,
             args.n_best_size,
             args.max_answer_length,
             args.do_lower_case,
-            output_prediction_file,
-            output_nbest_file,
-            output_null_log_odds_file,
             args.verbose_logging,
             args.version_2_with_negative,
             args.null_score_diff_threshold,
@@ -346,6 +344,7 @@ def evaluate(args, model, tokenizer, prefix=""):
     #     args.null_score_diff_threshold,
     # )
     # return results
+    return prediction
 
 
 def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=False):
