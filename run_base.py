@@ -163,24 +163,21 @@ def BaseParser(
 
     parser.add_argument(
         "--model_type",
-        default=None,
+        default="albert",
         type=str,
-        required=True,
         help="Model type selected in the list: " + ", ".join(MODEL_CLASSES),
     )
     parser.add_argument(
         "--model_name_or_path",
-        default=None,
+        default="./model4",
         type=str,
-        required=True,
         help="Path to pre-trained model or shortcut name selected in the list: "
         + ", ".join(ALL_MODELS),
     )
     parser.add_argument(
         "--output_dir",
-        default=None,
+        default="./prediction4",
         type=str,
-        required=True,
         help=(
             "The output directory where the model checkpoints and "
             "predictions will be written."
@@ -210,7 +207,10 @@ def BaseParser(
         "--do_train", action="store_true", help="Whether to run training."
     )
     parser.add_argument(
-        "--do_eval", action="store_true", help="Whether to run eval on the dev set."
+        "--do_eval",
+        default=True,
+        action="store_true",
+        help="Whether to run eval on the dev set.",
     )
     parser.add_argument(
         "--learning_rate",
@@ -226,6 +226,7 @@ def BaseParser(
     )
     parser.add_argument(
         "--do_lower_case",
+        default=True,
         action="store_true",
         help="Set this flag if you are using an uncased model.",
     )
@@ -238,7 +239,7 @@ def BaseParser(
     )
     parser.add_argument(
         "--per_gpu_eval_batch_size",
-        default=8,
+        default=16,
         type=int,
         help="Batch size per GPU/CPU for evaluation.",
     )
@@ -476,6 +477,7 @@ def base_main(
 
     return args, model, model_class, tokenizer, tokenizer_class
 
+
 # Made a custom processor to remove the answer loading part
 # This helps in prediction
 class CustomSquadV2Processor(SquadV2Processor):
@@ -540,6 +542,6 @@ class CustomSquadV2Processor(SquadV2Processor):
             ) as reader:
                 input_data = json.load(reader)["data"]
         else:
+            print(predict_data)
             input_data = json.loads(predict_data)["data"]
-        print(type(input_data))
         return self._create_examples(input_data, "dev")

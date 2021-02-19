@@ -24,10 +24,12 @@ import glob
 import logging
 import os
 import timeit
+import collections
 
 import torch
 from torch.utils.data import DataLoader, SequentialSampler
 from tqdm import tqdm
+from flask import g
 from transformers import (
     WEIGHTS_NAME,
     AlbertConfig,
@@ -199,6 +201,9 @@ def evaluate(args, model, tokenizer, prefix=""):
         args, tokenizer, evaluate=True, output_examples=True
     )
 
+    # NOTE: added to compute the prediction
+    prediction = collections.OrderedDict()
+
     if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
         os.makedirs(args.output_dir)
 
@@ -281,16 +286,16 @@ def evaluate(args, model, tokenizer, prefix=""):
     )
 
     # Compute predictions
-    output_prediction_file = os.path.join(args.output_dir, f"predictions_{prefix}.json")
-    output_nbest_file = os.path.join(
-        args.output_dir, "nbest_predictions_{}.json".format(prefix)
-    )
+    # output_prediction_file = os.path.join(args.output_dir, f"predictions_{prefix}.json")
+    # output_nbest_file = os.path.join(
+    #     args.output_dir, "nbest_predictions_{}.json".format(prefix)
+    # )
 
-    output_null_log_odds_file = (
-        os.path.join(args.output_dir, f"null_odds_{prefix}.json")
-        if args.version_2_with_negative
-        else None
-    )
+    # output_null_log_odds_file = (
+    #     os.path.join(args.output_dir, f"null_odds_{prefix}.json")
+    #     if args.version_2_with_negative
+    #     else None
+    # )
 
     # XLNet and XLM use a more complex post-processing procedure
     if args.model_type in ["xlnet", "xlm"]:
@@ -305,15 +310,12 @@ def evaluate(args, model, tokenizer, prefix=""):
             else model.module.config.end_n_top
         )
 
-        compute_predictions_log_probs(
+        prediction = custom_compute_predictions_log_probs(
             examples,
             features,
             all_results,
             args.n_best_size,
             args.max_answer_length,
-            output_prediction_file,
-            output_nbest_file,
-            output_null_log_odds_file,
             start_n_top,
             end_n_top,
             args.version_2_with_negative,
@@ -321,21 +323,18 @@ def evaluate(args, model, tokenizer, prefix=""):
             args.verbose_logging,
         )
     else:
-        compute_predictions_logits(
+        prediction = custom_compute_predictions_logits(
             examples,
             features,
             all_results,
             args.n_best_size,
             args.max_answer_length,
             args.do_lower_case,
-            output_prediction_file,
-            output_nbest_file,
-            output_null_log_odds_file,
             args.verbose_logging,
             args.version_2_with_negative,
             args.null_score_diff_threshold,
         )
-    print(prediction)
+    # print(prediction)
     # Compute the F1 and exact scores.
     # results = squad_evaluate(examples, predictions)
     # SQuAD 2.0
@@ -346,6 +345,7 @@ def evaluate(args, model, tokenizer, prefix=""):
     #     args.null_score_diff_threshold,
     # )
     # return results
+    return prediction
 
 
 def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=False):
@@ -399,11 +399,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                 tfds_examples, evaluate=evaluate
             )
         else:
-            processor = (
-                CustomSquadV2Processor()
-                if args.version_2_with_negative
-                else SquadV1Processor()
-            )
+            processor = CustomSquadV2Processor()
             examples = (
                 processor.get_dev_examples(
                     args.data_dir, predict_data=args.predict_data
@@ -651,7 +647,8 @@ def main():
 
     # Evaluate
     # result = evaluate(args, model, tokenizer, prefix=global_step)
-    evaluate(args, model, tokenizer, prefix=global_step)
+    prediction = evaluate(args, model, tokenizer, prefix=global_step)
+    print(prediction)
 
     # result = {
     #     (f"{k}_{global_step}" if global_step else k): v
