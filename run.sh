@@ -1,3 +1,3 @@
 export FLASK_APP=mrc
-export FLASK_ENV=development
+export FLASK_ENV=production
 flask run

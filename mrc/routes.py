@@ -9,15 +9,12 @@ def hello():
     return jsonify({"message": "Hello, MRC topper!"})
 
 
-@app.route("/prediction")
+@app.route("/prediction", methods=("GET", "POST"))
 def prediction():
-    predict_data = json.dumps(request.get_json("predict_data"))
-    print(type(predict_data))
+    predict_data = json.dumps(request.get_json())
     subprocess.run(
         [
-            "python run_squad.py --predict_data '{predict_data}'".format(
-                predict_data=predict_data
-            )
+            f"python run_squad.py --predict_data '{predict_data}'"
         ],
         shell=True,
     )
