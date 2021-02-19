@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import random
+import json
 from typing import Any, Mapping, Tuple
 
 import numpy as np
@@ -515,3 +516,30 @@ class CustomSquadV2Processor(SquadV2Processor):
 
                     examples.append(example)
         return examples
+
+    def get_dev_examples(self, data_dir, predict_data=None):
+        """
+        Returns the evaluation example from the data directory.
+
+        Args:
+            data_dir: Directory containing the data files used for training and evaluating.
+            filename: None by default, specify this if the evaluation file has a different name than the original one
+                which is `train-v1.1.json` and `train-v2.0.json` for squad versions 1.1 and 2.0 respectively.
+        """
+        if data_dir is None:
+            data_dir = ""
+
+        if self.dev_file is None:
+            raise ValueError(
+                "SquadProcessor should be instantiated via SquadV1Processor or SquadV2Processor"
+            )
+
+        if predict_data is None:
+            with open(
+                os.path.join(data_dir, self.dev_file), "r", encoding="utf-8"
+            ) as reader:
+                input_data = json.load(reader)["data"]
+        else:
+            input_data = json.loads(predict_data)["data"]
+        print(type(input_data))
+        return self._create_examples(input_data, "dev")

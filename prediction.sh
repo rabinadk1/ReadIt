@@ -5,7 +5,6 @@ python3 run_squad.py \
     --do_eval \
     --do_lower_case \
     --version_2_with_negative \
-    --predict_file ./dev-v2.0modified.json \
     --max_seq_length 512 \
     --n_best_size=20 \
     --max_answer_length=30 \

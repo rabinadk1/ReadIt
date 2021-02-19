@@ -9,7 +9,7 @@ def hello():
     return jsonify({"message": "Hello, MRC topper!"})
 
 
-@app.route("/prediction")
+@app.route("/prediction", methods=["GET", "POST"])
 def prediction():
     subprocess.call(["bash", "./prediction.sh"])
     return jsonify({"message": "noice prediction"})

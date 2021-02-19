@@ -47,9 +47,9 @@ from transformers import (
     XLNetTokenizer,
     squad_convert_examples_to_features,
 )
-from transformers.data.metrics.squad_metrics import (
-    compute_predictions_log_probs,
-    compute_predictions_logits,
+from custom_predict import (
+    custom_compute_predictions_log_probs,
+    custom_compute_predictions_logits,
 )
 from transformers.data.processors.squad import SquadResult, SquadV1Processor
 
@@ -335,7 +335,7 @@ def evaluate(args, model, tokenizer, prefix=""):
             args.version_2_with_negative,
             args.null_score_diff_threshold,
         )
-
+    print(prediction)
     # Compute the F1 and exact scores.
     # results = squad_evaluate(examples, predictions)
     # SQuAD 2.0
@@ -380,7 +380,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
         logger.info(f"Creating features from dataset file at {input_dir}")
 
         if not args.data_dir and (
-            (evaluate and not args.predict_file)
+            (evaluate and not args.predict_data)
             or (not evaluate and not args.train_file)
         ):
             try:
@@ -404,9 +404,10 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
                 if args.version_2_with_negative
                 else SquadV1Processor()
             )
-
             examples = (
-                processor.get_dev_examples(args.data_dir, filename=args.predict_file)
+                processor.get_dev_examples(
+                    args.data_dir, predict_data=args.predict_data
+                )
                 if evaluate
                 else processor.get_train_examples(
                     args.data_dir, filename=args.train_file
@@ -468,14 +469,10 @@ def main():
         ),
     )
     parser.add_argument(
-        "--predict_file",
-        default=None,
+        "--predict_data",
+        default='{"data": [{"title": "Hell", "paragraphs": [{"qas": [{"question": "What is Nepal?", "id": "asdere"}], "context": "Nepal is a country."}]}]}',
         type=str,
-        help=(
-            "The input evaluation file. If a data dir is specified, will look for "
-            "the file there. If no data dir or train/predict files are specified, "
-            "will run with tensorflow_datasets."
-        ),
+        help=("The input evaluation data. This is entered in a json format."),
     )
 
     parser.add_argument(
@@ -572,94 +569,95 @@ def main():
         apex.amp.register_half_function(torch, "einsum")
 
     # Training
-    if args.do_train:
-        train_dataset = load_and_cache_examples(
-            args, tokenizer, evaluate=False, output_examples=False
-        )
-        global_step, tr_loss = train(args, train_dataset, model, tokenizer)
-        logger.info(f" global_step = {global_step}, average loss = {tr_loss}")
+    # if args.do_train:
+    #     train_dataset = load_and_cache_examples(
+    #         args, tokenizer, evaluate=False, output_examples=False
+    #     )
+    #     global_step, tr_loss = train(args, train_dataset, model, tokenizer)
+    #     logger.info(f" global_step = {global_step}, average loss = {tr_loss}")
 
-        # Save the trained model and the tokenizer
-        if args.local_rank == -1 or torch.distributed.get_rank() == 0:
-            # Create output directory if needed
-            if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
-                os.makedirs(args.output_dir)
+    #     # Save the trained model and the tokenizer
+    #     if args.local_rank == -1 or torch.distributed.get_rank() == 0:
+    #         # Create output directory if needed
+    #         if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
+    #             os.makedirs(args.output_dir)
 
-            logger.info(
-                f"Saving model checkpoint to {args.output_dir}",
-            )
-            # Save a trained model, configuration and
-            # tokenizer using `save_pretrained()`.
-            # They can then be reloaded using `from_pretrained()`
-            model_to_save = (
-                model.module if hasattr(model, "module") else model
-            )  # Take care of distributed/parallel training
-            model_to_save.save_pretrained(args.output_dir)
-            tokenizer.save_pretrained(args.output_dir)
+    #         logger.info(
+    #             f"Saving model checkpoint to {args.output_dir}",
+    #         )
+    #         # Save a trained model, configuration and
+    #         # tokenizer using `save_pretrained()`.
+    #         # They can then be reloaded using `from_pretrained()`
+    #         model_to_save = (
+    #             model.module if hasattr(model, "module") else model
+    #         )  # Take care of distributed/parallel training
+    #         model_to_save.save_pretrained(args.output_dir)
+    #         tokenizer.save_pretrained(args.output_dir)
 
-            # Good practice: save your training arguments
-            # together with the trained model
-            torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
+    #         # Good practice: save your training arguments
+    #         # together with the trained model
+    #         torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
 
-            # Load a trained model and vocabulary that you have fine-tuned
-            model = model_class.from_pretrained(args.output_dir, force_download=True)
-            tokenizer = tokenizer_class.from_pretrained(
-                args.output_dir, do_lower_case=args.do_lower_case
-            )
-        model.to(args.device)
+    #         # Load a trained model and vocabulary that you have fine-tuned
+    #         model = model_class.from_pretrained(args.output_dir, force_download=True)
+    #         tokenizer = tokenizer_class.from_pretrained(
+    #             args.output_dir, do_lower_case=args.do_lower_case
+    #         )
+    #     model.to(args.device)
 
     # Evaluation - we can ask to evaluate all the checkpoints
     # (sub-directories) in a directory
     # results = {}
-    if args.do_eval and args.local_rank in [-1, 0]:
+    # if args.do_eval and args.local_rank in [-1, 0]:
 
-        if args.do_train:
-            logger.info("Loading checkpoints saved during training for evaluation")
-            checkpoints = [args.output_dir]
-            if args.eval_all_checkpoints:
-                checkpoints = list(
-                    os.path.dirname(c)
-                    for c in sorted(
-                        glob.glob(
-                            args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True
-                        )
-                    )
-                )
-                logging.getLogger("transformers.modeling_utils").setLevel(
-                    logging.WARN
-                )  # Reduce model loading logs
-        elif args.eval_all_checkpoints:
-            checkpoints = list(
-                os.path.dirname(c)
-                for c in sorted(
-                    glob.glob(args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True)
-                )
-            )
-            logger.info(f"Loading checkpoint {checkpoints} for evaluation")
-            logging.getLogger("transformers.modeling_utils").setLevel(
-                logging.WARN
-            )  # Reduce model loading logs
-        else:
-            logger.info(f"Loading checkpoint {args.model_name_or_path} for evaluation")
-            checkpoints = [args.model_name_or_path]
+    # if args.do_train:
+    #     logger.info("Loading checkpoints saved during training for evaluation")
+    #     checkpoints = [args.output_dir]
+    #     if args.eval_all_checkpoints:
+    #         checkpoints = list(
+    #             os.path.dirname(c)
+    #             for c in sorted(
+    #                 glob.glob(
+    #                     args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True
+    #                 )
+    #             )
+    #         )
+    #         logging.getLogger("transformers.modeling_utils").setLevel(
+    #             logging.WARN
+    #         )  # Reduce model loading logs
+    # elif args.eval_all_checkpoints:
+    #     checkpoints = list(
+    #         os.path.dirname(c)
+    #         for c in sorted(
+    #             glob.glob(args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True)
+    #         )
+    #     )
+    #     logger.info(f"Loading checkpoint {checkpoints} for evaluation")
+    #     logging.getLogger("transformers.modeling_utils").setLevel(
+    #         logging.WARN
+    #     )  # Reduce model loading logs
+    # else:
+    logger.info(f"Loading checkpoint {args.model_name_or_path} for evaluation")
+    checkpoint = args.model_name_or_path
 
-        logger.info(f"Evaluate the following checkpoints: {checkpoints}")
+    logger.info(f"Evaluate the following checkpoints: {checkpoint}")
 
-        for checkpoint in checkpoints:
-            # Reload the model
-            global_step = checkpoint.split("-")[-1] if len(checkpoints) > 1 else ""
-            model = model_class.from_pretrained(checkpoint, force_download=True)
-            model.to(args.device)
+    # for checkpoint in checkpoint:
+    # Reload the model
+    global_step = checkpoint.split("-")[-1] if len(checkpoint) > 1 else ""
+    model = model_class.from_pretrained(checkpoint, force_download=True)
+    model.to(args.device)
+    print("model loading done")
 
-            # Evaluate
-            # result = evaluate(args, model, tokenizer, prefix=global_step)
-            evaluate(args, model, tokenizer, prefix=global_step)
+    # Evaluate
+    # result = evaluate(args, model, tokenizer, prefix=global_step)
+    evaluate(args, model, tokenizer, prefix=global_step)
 
-            # result = {
-            #     (f"{k}_{global_step}" if global_step else k): v
-            #     for k, v in result.items()
-            # }
-            # results.update(result)
+    # result = {
+    #     (f"{k}_{global_step}" if global_step else k): v
+    #     for k, v in result.items()
+    # }
+    # results.update(result)
 
     # logger.info(f"Results: {results}")
     # with open(os.path.join(args.output_dir, "result.txt"), "a") as writer:
