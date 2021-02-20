@@ -20,6 +20,7 @@ Finetuning the library models for question-answering on SQuAD
 
 from __future__ import absolute_import, division, print_function
 
+import argparse
 import glob
 import logging
 import os
@@ -56,7 +57,7 @@ from custom_predict import (
 from transformers.data.processors.squad import SquadResult, SquadV1Processor
 
 # from evaluate_official2 import eval_squad
-from run_base import BaseParser, CustomSquadV2Processor, base_main, base_train
+from run_base import CustomSquadV2Processor, base_main, base_train
 
 logger = logging.getLogger(__name__)
 
@@ -434,119 +435,14 @@ def load_and_cache_examples(args, tokenizer, evaluate=False, output_examples=Fal
     return dataset
 
 
-def main():
-    parser = BaseParser(ALL_MODELS, MODEL_CLASSES)
+# NOTE: custom code hai bro haru
 
-    # !Other parameters
-    parser.add_argument(
-        "--padding_side",
-        default="right",
-        type=str,
-        help="right/left, padding_side of passage / question",
-    )
-    parser.add_argument(
-        "--data_dir",
-        default="",
-        type=str,
-        help=(
-            "The input data dir. Should contain the .json files for the task."
-            "If no data dir or train/predict files are specified, will run "
-            "with tensorflow_datasets."
-        ),
-    )
-    parser.add_argument(
-        "--train_file",
-        default=None,
-        type=str,
-        help=(
-            "The input training file. If a data dir is specified, will look for "
-            "the file there.If no data dir or train/predict files are specified, "
-            "will run with tensorflow_datasets."
-        ),
-    )
-    parser.add_argument(
-        "--predict_data",
-        default='{"data": [{"title": "Hell", "paragraphs": [{"qas": [{"question": "What is Nepal?", "id": "asdere"}], "context": "Nepal is a country."}]}]}',
-        type=str,
-        help=("The input evaluation data. This is entered in a json format."),
-    )
 
-    parser.add_argument(
-        "--version_2_with_negative",
-        action="store_true",
-        help="If true, the SQuAD examples contain some that do not have an answer.",
-    )
-    parser.add_argument(
-        "--null_score_diff_threshold",
-        type=float,
-        default=0.0,
-        help=(
-            "If null_score - best_non_null is greater than "
-            "the threshold predict null."
-        ),
-    )
-
-    parser.add_argument(
-        "--max_seq_length",
-        default=384,
-        type=int,
-        help=(
-            "The maximum total input sequence length after WordPiece tokenization. "
-            "Sequences longer than this will be truncated, and "
-            "sequences shorter than this will be padded."
-        ),
-    )
-    parser.add_argument(
-        "--doc_stride",
-        default=128,
-        type=int,
-        help=(
-            "When splitting up a long document into chunks, "
-            "how much stride to take between chunks."
-        ),
-    )
-    parser.add_argument(
-        "--max_query_length",
-        default=64,
-        type=int,
-        help=(
-            "The maximum number of tokens for the question. "
-            "Questions longer than this will be truncated to this length."
-        ),
-    )
-
-    parser.add_argument(
-        "--n_best_size",
-        default=20,
-        type=int,
-        help=(
-            "The total number of n-best predictions to generate in the "
-            "nbest_predictions.json output file."
-        ),
-    )
-    parser.add_argument(
-        "--max_answer_length",
-        default=30,
-        type=int,
-        help=(
-            "The maximum length of an answer that can be generated. "
-            "This is needed because the start and end predictions are not "
-            "conditioned on one another."
-        ),
-    )
-    parser.add_argument(
-        "--verbose_logging",
-        action="store_true",
-        help=(
-            "If true, all of the warnings related to data processing will be printed. "
-            "A number of warnings are expected for a normal SQuAD evaluation."
-        ),
-    )
-
+def load_model(model_config):
+    args = argparse.Namespace(**model_config)
     args, model, model_class, tokenizer, tokenizer_class = base_main(
-        parser, logger, MODEL_CLASSES, is_cls=False
+        args, logger, MODEL_CLASSES, is_cls=False
     )
-
     # Before we do anything with models, we want to ensure that we get fp16 execution
     # of torch.einsum if args.fp16 is set.
     # Otherwise it'll default to "promote" mode, and we'll get fp32 operations.
@@ -564,106 +460,14 @@ def main():
             )
         apex.amp.register_half_function(torch, "einsum")
 
-    # Training
-    # if args.do_train:
-    #     train_dataset = load_and_cache_examples(
-    #         args, tokenizer, evaluate=False, output_examples=False
-    #     )
-    #     global_step, tr_loss = train(args, train_dataset, model, tokenizer)
-    #     logger.info(f" global_step = {global_step}, average loss = {tr_loss}")
-
-    #     # Save the trained model and the tokenizer
-    #     if args.local_rank == -1 or torch.distributed.get_rank() == 0:
-    #         # Create output directory if needed
-    #         if not os.path.exists(args.output_dir) and args.local_rank in [-1, 0]:
-    #             os.makedirs(args.output_dir)
-
-    #         logger.info(
-    #             f"Saving model checkpoint to {args.output_dir}",
-    #         )
-    #         # Save a trained model, configuration and
-    #         # tokenizer using `save_pretrained()`.
-    #         # They can then be reloaded using `from_pretrained()`
-    #         model_to_save = (
-    #             model.module if hasattr(model, "module") else model
-    #         )  # Take care of distributed/parallel training
-    #         model_to_save.save_pretrained(args.output_dir)
-    #         tokenizer.save_pretrained(args.output_dir)
-
-    #         # Good practice: save your training arguments
-    #         # together with the trained model
-    #         torch.save(args, os.path.join(args.output_dir, "training_args.bin"))
-
-    #         # Load a trained model and vocabulary that you have fine-tuned
-    #         model = model_class.from_pretrained(args.output_dir, force_download=True)
-    #         tokenizer = tokenizer_class.from_pretrained(
-    #             args.output_dir, do_lower_case=args.do_lower_case
-    #         )
-    #     model.to(args.device)
-
-    # Evaluation - we can ask to evaluate all the checkpoints
-    # (sub-directories) in a directory
-    # results = {}
-    # if args.do_eval and args.local_rank in [-1, 0]:
-
-    # if args.do_train:
-    #     logger.info("Loading checkpoints saved during training for evaluation")
-    #     checkpoints = [args.output_dir]
-    #     if args.eval_all_checkpoints:
-    #         checkpoints = list(
-    #             os.path.dirname(c)
-    #             for c in sorted(
-    #                 glob.glob(
-    #                     args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True
-    #                 )
-    #             )
-    #         )
-    #         logging.getLogger("transformers.modeling_utils").setLevel(
-    #             logging.WARN
-    #         )  # Reduce model loading logs
-    # elif args.eval_all_checkpoints:
-    #     checkpoints = list(
-    #         os.path.dirname(c)
-    #         for c in sorted(
-    #             glob.glob(args.output_dir + "/**/" + WEIGHTS_NAME, recursive=True)
-    #         )
-    #     )
-    #     logger.info(f"Loading checkpoint {checkpoints} for evaluation")
-    #     logging.getLogger("transformers.modeling_utils").setLevel(
-    #         logging.WARN
-    #     )  # Reduce model loading logs
-    # else:
     logger.info(f"Loading checkpoint {args.model_name_or_path} for evaluation")
     checkpoint = args.model_name_or_path
 
     logger.info(f"Evaluate the following checkpoints: {checkpoint}")
 
-    # for checkpoint in checkpoint:
     # Reload the model
     global_step = checkpoint.split("-")[-1] if len(checkpoint) > 1 else ""
     model = model_class.from_pretrained(checkpoint, force_download=True)
     model.to(args.device)
     print("model loading done")
-
-    # Evaluate
-    # result = evaluate(args, model, tokenizer, prefix=global_step)
-    prediction = evaluate(args, model, tokenizer, prefix=global_step)
-    print(prediction)
-
-    # result = {
-    #     (f"{k}_{global_step}" if global_step else k): v
-    #     for k, v in result.items()
-    # }
-    # results.update(result)
-
-    # logger.info(f"Results: {results}")
-    # with open(os.path.join(args.output_dir, "result.txt"), "a") as writer:
-    #     for key in sorted(results):
-    #         logger.info(f"  {key} = {results[key]}")
-    #         writer.write(f"{key} = {results[key]}\t")
-    #         writer.write("\t\n")
-    # return results
-
-
-if __name__ == "__main__":
-    main()
+    return args, model, tokenizer, global_step

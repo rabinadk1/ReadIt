@@ -1,8 +1,9 @@
 import os
 import subprocess
+import json
 
 from flask import Flask
-from run_squad import main
+from run_squad import load_model
 
 app = Flask(__name__, instance_relative_config=True)
 
@@ -14,14 +15,8 @@ try:
 except OSError:
     pass
 
-global args, model, tokenizer
-# args, model, tokenizer = subprocess.check_output(
-#     "python ./run_squad.py --model_type albert \
-#     --model_name_or_path ./model4 --do_eval \
-#         --do_lower_case --version_2_with_negative\
-#               --max_answer_length=30 --doc_stride 128 \
-#                   --max_query_length=64 --per_gpu_eval_batch_size=16 \
-#                       --output_dir ../prediction4"
-# )
+with open(os.path.join(__name__, "model_config.json")) as config_file:
+    app.config["model_config"] = json.load(config_file)
 
+args, model, tokenizer, global_step = load_model(app.config["model_config"])
 from . import routes
