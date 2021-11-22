@@ -1,0 +1,3 @@
+[submodule "readItBot"]
+	path = readItBot
+	url = git@github.com:samipism/readItBot.git
